@@ -1,11 +1,12 @@
 use hex::decode;
 use lazy_static::lazy_static;
 use regex::{Captures, Regex};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 use std::string::ToString;
 use strum_macros::Display;
-#[derive(Display, Debug, Clone)]
+#[derive(Display, Debug, Clone, Serialize, Deserialize)]
 pub enum Mod {
     SUPER,
     ALT,
@@ -13,7 +14,7 @@ pub enum Mod {
     SHIFT,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Color(u8, u8, u8, u8);
 impl Color {
     fn from_rgb(r: u8, g: u8, b: u8) -> Color {
@@ -30,7 +31,8 @@ impl std::fmt::Display for Color {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
 pub enum Token {
     Int(i64),
     Bool(bool),
@@ -64,51 +66,9 @@ impl std::fmt::Display for Token {
     }
 }
 
-//#[derive(Debug)]
-//pub enum AstObj<T, D> {
-//    Token(T),
-//    Tree(D),
-//}
 pub type AstObj = Token;
-/*impl<T, D> AstObj<T, D> {
-    fn unwrap_token(self) -> T {
-        match self {
-            Token(v) => v,
-            Tree(_) => panic!("Tried to unwrap `token`, when value was `tree`")
-        }
-    }
-    fn unwrap_tree(self) -> D {
-        match self {
-            Tree(v) => v,
-            Token(_) => panic!("Tried to unwrap `tree`, when value was `token`")
-        }
-    }
-}*/
-/*
-fn ser_ast_obj(tree: AstObj) -> String {
-    let mut buf = String::new();
-    for (k, v) in self.0.iter() {
-        buf += match i {
-            Self::Tree(tree) => {
-                buf += k + " {";
-                buf += ser_ast_obj(tree);
-                buf += "}";
-            }
-            Self::Token(item) => item.to_string()
-        };
-    }
-    buf
-}
 
-impl std::fmt::Display for AstObj {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let mut buf = String::new();
-        buf += ser_ast_obj(self);
-        write!(f, "{buf}")
-    }
-}
-*/
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AstRoot {
     config: BTreeMap<String, Vec<Token>>,
     keywords: BTreeMap<String, Vec<Token>>,
@@ -241,8 +201,8 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
         r"^rgba\((?P<r>\d*), *(?P<g>\d*), *(?P<b>\d*), *(?P<a>\d*)\)$", // rgba
         r"^0x(?P<a>[[:xdigit:]]{2})(?P<r>[[:xdigit:]]{2})(?P<g>[[:xdigit:]]{2})(?P<b>[[:xdigit:]]{2})$", // legacy argb
         r"^(true|false|yes|no|0|1)$", // bool
-        r"^(\d*.\d*)$", // float
-        r"^(?P<v1>\d*.\d*) +(?P<v2>\d*.\d*)$", // vec2
+        r"^(\-?\d*\.\d*)$", // float
+        r"^(?P<v1>\-?\d*\.\d*) +(?P<v2>\-?\d*\.\d*)$", // vec2
         r"^\-?\d*$", // Int
         r"^([sS][uU][pP][eE][rR]|CTRL|Ctrl|ctrl|ALT|alt|Alt)$", // MOD
         r"^(?P<pre>.*?) *(?P<deg>\d*) *deg$", // gradient
@@ -348,7 +308,7 @@ pub fn whole_parser(cfg: &str) -> AstRoot {
     let mut ast = AstRoot::default();
     let mut vars: BTreeMap<String, Token> = BTreeMap::new();
     let mut depth = vec![];
-    for (ln, line) in lines.enumerate() {
+    for (_ln, line) in lines.enumerate() {
         if line.trim().starts_with("#") {
             continue;
         } else if line.ends_with('{') {
@@ -358,8 +318,8 @@ pub fn whole_parser(cfg: &str) -> AstRoot {
             depth.pop();
             continue;
         } else if line.trim().starts_with('$') {
-            line.replace('$', "");
-            let (name, tokens) = line_parse(line);
+            let line = line.replace('$', "");
+            let (name, tokens) = line_parse(&line);
             vars.insert(name, tokens[0].clone());
         } else {
             let (pre, _) = {
@@ -371,38 +331,20 @@ pub fn whole_parser(cfg: &str) -> AstRoot {
                 ast.keywords.insert(name, tokens);
                 continue;
             }
-            set_value(&mut ast, depth.clone(), line.to_string());
+            let name = if depth.len() != 0 {
+                join(depth.clone(), ':') + ":" + pre
+            } else {
+                pre.to_string()
+            };
+            let mut parsed = line_parse(&line).1;
+            for item in parsed.iter_mut() {
+                if let Token::Variable(name) = item {
+                    *item = vars.get(name).expect("Unknown variable passed in").clone();
+                }
+            }
+            ast.config.insert(name, parsed);
         };
     }
     ast
     //AstObj(BTreeMap::new())
-}
-
-fn set_value(ast: &mut AstRoot, depth: Vec<&str>, line: String) {
-    let (pre, _) = {
-        let stuff: Vec<_> = line.split('=').map(|l| l.trim()).collect();
-        (stuff[0], stuff[1])
-    };
-    //let mut line_depth: Vec<_> = pre.split(':').collect();
-    //line_depth.pop();
-    //let mut shared_depth = depth.clone();
-    //shared_depth.append(&mut line_depth);
-    //let length = shared_depth.len();
-    let name = if depth.len() != 0 {
-        join(depth, ':') + ":" + pre
-    } else {
-        pre.to_string()
-    };
-    ast.config.insert(name, line_parse(&line).1);
-    /*for (index, i) in shared_depth.iter().enumerate() {
-        if index == length - 1 {
-
-        }
-        //let head = &ast.0.unwrap_that();
-        match head.get(i) {
-            Some(This(_)) => panic!("Value cannot be owned by token!"),
-            Some(That(tree)) =>
-            None => head.insert
-        }
-    }*/
 }
