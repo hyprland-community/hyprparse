@@ -46,6 +46,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hyprparse"
+version = "0.1.0-alpha.0"
+dependencies = [
+ "hex",
+ "lazy_static",
+ "regex",
+ "serde",
+ "strum",
+ "strum_macros",
+]
+
+[[package]]
+name = "hyprparse-js"
+version = "0.1.0-alpha.0"
+dependencies = [
+ "console_error_panic_hook",
+ "hyprparse",
+ "serde",
+ "serde-wasm-bindgen",
+ "serde_json",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "itoa"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -265,27 +289,3 @@ name = "wasm-bindgen-shared"
 version = "0.2.84"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0046fef7e28c3804e5e38bfa31ea2a0f73905319b677e57ebe37e49358989b5d"
-
-[[package]]
-name = "workspace"
-version = "0.1.0"
-dependencies = [
- "hex",
- "lazy_static",
- "regex",
- "serde",
- "strum",
- "strum_macros",
-]
-
-[[package]]
-name = "workspace-js"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "wasm-bindgen",
- "workspace",
-]

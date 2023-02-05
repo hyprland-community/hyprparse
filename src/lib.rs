@@ -136,7 +136,18 @@ fn parse_color(cs: &Captures, num: u8) -> Color {
             color
         }
         2 => {
-            // Rgba
+            // Rgb hex
+            let color = Color::from_rgba(
+                decode(&cs["r"]).unwrap()[0],
+                decode(&cs["g"]).unwrap()[0],
+                decode(&cs["b"]).unwrap()[0],
+                decode(&cs["a"]).unwrap()[0],
+            );
+            color
+        }
+
+        3 => {
+            // Argb
             let color = Color::from_rgba(
                 decode(&cs["r"]).unwrap()[0],
                 decode(&cs["g"]).unwrap()[0],
@@ -199,6 +210,7 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
       static ref TOKEN_SET: RegexSet = RegexSet::new([
         r"^rgb\((?P<r>\d*), *(?P<g>\d*), *(?P<b>\d*)\)$", // rgb
         r"^rgba\((?P<r>\d*), *(?P<g>\d*), *(?P<b>\d*), *(?P<a>\d*)\)$", // rgba
+        r"^rgba\((?P<r>[[:xdigit:]]{2})(?P<g>[[:xdigit:]]{2})(?P<b>[[:xdigit:]]{2})(?P<a>[[:xdigit:]]{2})\)$", // rgba hex
         r"^0x(?P<a>[[:xdigit:]]{2})(?P<r>[[:xdigit:]]{2})(?P<g>[[:xdigit:]]{2})(?P<b>[[:xdigit:]]{2})$", // legacy argb
         r"^(true|false|yes|no|0|1)$", // bool
         r"^(\-?\d*\.\d*)$", // float
@@ -238,19 +250,20 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
             match matches[0] {
                 0 => Token::Color(parse_color(&captures, 0)), // Rgb
                 1 => Token::Color(parse_color(&captures, 1)), // Rgba
-                2 => Token::Color(parse_color(&captures, 2)), // Argb
-                3 => Token::Bool(match token {
+                2 => Token::Color(parse_color(&captures, 2)), // Rgba Hex
+                3 => Token::Color(parse_color(&captures, 3)), // Argb
+                4 => Token::Bool(match token {
                     "true" | "yes" | "1" => true,
                     "false" | "no" | "0" => false,
                     _ => unreachable!(),
                 }),
-                4 => Token::Float(token.parse::<f64>().unwrap()),
-                5 => Token::Vec2(
+                5 => Token::Float(token.parse::<f64>().unwrap()),
+                6 => Token::Vec2(
                     captures["v1"].parse::<f64>().unwrap(),
                     captures["v2"].parse::<f64>().unwrap(),
                 ),
-                6 => Token::Int(token.parse::<i64>().unwrap()),
-                7 => {
+                7 => Token::Int(token.parse::<i64>().unwrap()),
+                8 => {
                     use Mod::*;
                     Token::Mod(match token.to_lowercase().as_str() {
                         "super" => SUPER,
@@ -259,7 +272,7 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
                         _ => unreachable!(),
                     })
                 }
-                8 => {
+                9 => {
                     let colors = {
                         let mut colors: Vec<Color> = vec![];
                         let mut rgbs: Vec<_> = captures["pre"]
@@ -286,11 +299,11 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
                     };
                     Token::Gradient(colors, captures["deg"].parse::<u16>().unwrap())
                 }
-                9 => Token::Variable(captures["name"].to_string()),
-                10 => Token::Str(token.trim().to_string()),
+                10 => Token::Variable(captures["name"].to_string()),
+                11 => Token::Str(token.trim().to_string()),
                 _ => todo!(),
             }
-        } else if matches.len() == 1 && matches[0] == 10 {
+        } else if matches.len() == 1 && matches[0] == 11 {
             Token::Str(token.trim().to_string())
         } else {
             panic!("no matches {matches:#?}")
