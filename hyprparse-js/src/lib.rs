@@ -9,14 +9,13 @@ pub fn initialize() {
 }
 
 #[wasm_bindgen]
-pub fn parse_hypr(conf: &str) -> JsValue {
+pub fn parse(conf: &str) -> JsValue {
     serde_wasm_bindgen::to_value(&whole_parser(conf)).unwrap()
 }
 
 #[wasm_bindgen]
-pub fn stringify_hypr(conf: JsValue) -> String {
+pub fn stringify(conf: JsValue) -> String {
     serde_wasm_bindgen::from_value::<AstRoot>(conf)
         .unwrap()
         .to_string()
 }
-
