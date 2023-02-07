@@ -5,13 +5,15 @@ fn main() {
     $test = -69
     general:test4 = $test,$test,$test
     general:test = rgb(69,69,69)
-    general:test5 = rgba(FFFFFFFF)
+    general:test5 = rgba(FFFFFFFF),rgb(000000)
     # hello
     general {
       test2 = rgba(7,8,9,100)
-      test3 = rgba(7,8,9,100) 0xFFFFFFFF 69deg
+      test3 = rgba(7,8,9,100) 0xFFFFFFFF rgb(4,4,4) 69deg
     }
-    bind=SUPER, Q, exit
+    bind=SUPER_SHIFT, Q, exit
+    bind=,V,exit
   "#;
     println!("{:#?}", whole_parser(CONFIG));
+    println!("{}", whole_parser(CONFIG));
 }

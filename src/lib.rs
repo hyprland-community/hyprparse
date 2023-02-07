@@ -34,12 +34,13 @@ impl std::fmt::Display for Color {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Token {
+    Empty,
     Int(i64),
     Bool(bool),
     Float(f64),
     Color(Color),
     Vec2(f64, f64),
-    Mod(Mod),
+    Mod(Vec<Mod>),
     Gradient(Vec<Color>, u16),
     Variable(String),
     Str(String),
@@ -57,9 +58,10 @@ impl std::fmt::Display for Token {
                 Float(f) => f.to_string(),
                 Color(c) => c.to_string(),
                 Vec2(v1, v2) => format!("{v1} {v2}"),
-                Mod(m) => m.to_string(),
+                Mod(m) => join(m.to_vec(), '_'),
                 Gradient(colors, degrees) => format!("{} {degrees}deg", join(colors.to_vec(), ' ')),
                 Str(s) => s.clone(),
+                Empty => "".to_string(),
                 Variable(v) => format!("${v}"),
             }
         )
@@ -71,7 +73,7 @@ pub type AstObj = Token;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AstRoot {
     config: BTreeMap<String, Vec<Token>>,
-    keywords: BTreeMap<String, Vec<Token>>,
+    keywords: BTreeMap<String, Vec<Vec<Token>>>,
 }
 
 fn join<T: ToString, Str: ToString>(vec: Vec<T>, sep: Str) -> String {
@@ -91,7 +93,9 @@ impl std::fmt::Display for AstRoot {
             let keys = self.keywords.clone();
             let mut buf = "".to_string();
             for (k, v) in keys.iter() {
-                buf += &format!("{k} = {}", join(v.to_vec(), ','));
+                for i in v.iter() {
+                    buf += &format!("{k} = {}\n", join(i.to_vec(), ','));
+                }
             }
             buf
         };
@@ -99,7 +103,7 @@ impl std::fmt::Display for AstRoot {
             let confs = self.config.clone();
             let mut buf = "".to_string();
             for (k, v) in confs.iter() {
-                buf += &format!("{k} = {}", join(v.to_vec(), ','));
+                buf += &format!("{k} = {}\n", join(v.to_vec(), ','));
             }
             buf
         };
@@ -116,7 +120,7 @@ where
 
 fn parse_color(cs: &Captures, num: u8) -> Color {
     match num {
-        0 => {
+        1 => {
             // Rgb
             let color = Color::from_rgb(
                 get_val_as::<u8>(&cs, "r"),
@@ -125,7 +129,16 @@ fn parse_color(cs: &Captures, num: u8) -> Color {
             );
             color
         }
-        1 => {
+        2 => {
+            // Rgb hex
+            let color = Color::from_rgb(
+                decode(&cs["r"]).unwrap()[0],
+                decode(&cs["g"]).unwrap()[0],
+                decode(&cs["b"]).unwrap()[0],
+            );
+            color
+        }
+        3 => {
             // Rgba
             let color = Color::from_rgba(
                 get_val_as::<u8>(&cs, "r"),
@@ -135,8 +148,8 @@ fn parse_color(cs: &Captures, num: u8) -> Color {
             );
             color
         }
-        2 => {
-            // Rgb hex
+        4 => {
+            // Rgba hex
             let color = Color::from_rgba(
                 decode(&cs["r"]).unwrap()[0],
                 decode(&cs["g"]).unwrap()[0],
@@ -146,7 +159,7 @@ fn parse_color(cs: &Captures, num: u8) -> Color {
             color
         }
 
-        3 => {
+        5 => {
             // Argb
             let color = Color::from_rgba(
                 decode(&cs["r"]).unwrap()[0],
@@ -161,66 +174,38 @@ fn parse_color(cs: &Captures, num: u8) -> Color {
 }
 // [rgb][(3,4,3)] [,hello,bye]
 fn split_args(s: String) -> Vec<String> {
-    let mut buf = String::new();
-    for i in s.split(")").map(|s| {
-        if s.contains("(") {
-            s.to_string() + ")"
-        } else {
-            s.to_string()
-        }
-    }) {
-        let text = if i.contains("rgba") {
-            Some("rgba(")
-        } else if i.contains("rgb") {
-            Some("rgb(")
-        } else {
-            None
-        };
-        for j in i.split("(").map(|s| {
-            if s.contains(")") {
-                let test = match text {
-                    Some(v) => v.to_string() + s,
-                    None => s.to_string(),
-                };
-                test
-            } else {
-                s.to_string()
-            }
-        }) {
-            if j.ends_with(")") {
-                buf += &(j.replace(",", "!@!") + " ");
-            } else if (j.trim() == "rgb") || (j.trim() == "rgba") {
-                buf += "";
-            } else {
-                buf += &j;
-            }
-        }
+    lazy_static! {
+        static ref REGEX: Regex =
+            Regex::new(r#"(?P<token>.+deg|rgba?\(.*?\)|".*?"|[^,]*)(?:,?|$)"#)
+                .expect("error creating regex");
     }
-    let new = buf
-        .trim()
-        .split(",")
-        .map(|s| s.to_string().replace("!@!", ","))
-        .collect();
-    new
+    let mut buf = vec![];
+    for i in REGEX.captures_iter(&s) {
+        buf.push(i["token"].to_string())
+    }
+    buf
 }
 
 pub fn line_parse(line: &str) -> (String, Vec<Token>) {
     use regex::RegexSet;
     lazy_static! {
       static ref TOKEN_SET: RegexSet = RegexSet::new([
+        r"^( *)$", // Empty
         r"^rgb\((?P<r>\d*), *(?P<g>\d*), *(?P<b>\d*)\)$", // rgb
+        r"^rgb\((?P<r>[[:xdigit:]]{2})(?P<g>[[:xdigit:]]{2})(?P<b>[[:xdigit:]]{2})\)$", // rgb hex
         r"^rgba\((?P<r>\d*), *(?P<g>\d*), *(?P<b>\d*), *(?P<a>\d*)\)$", // rgba
         r"^rgba\((?P<r>[[:xdigit:]]{2})(?P<g>[[:xdigit:]]{2})(?P<b>[[:xdigit:]]{2})(?P<a>[[:xdigit:]]{2})\)$", // rgba hex
         r"^0x(?P<a>[[:xdigit:]]{2})(?P<r>[[:xdigit:]]{2})(?P<g>[[:xdigit:]]{2})(?P<b>[[:xdigit:]]{2})$", // legacy argb
         r"^(true|false|yes|no|0|1)$", // bool
         r"^(\-?\d*\.\d*)$", // float
-        r"^(?P<v1>\-?\d*\.\d*) +(?P<v2>\-?\d*\.\d*)$", // vec2
+        r"^(?P<v1>\-?\d+\.?\d*) +(?P<v2>\-?\d+\.?\d*)$", // vec2
         r"^\-?\d*$", // Int
-        r"^([sS][uU][pP][eE][rR]|CTRL|Ctrl|ctrl|ALT|alt|Alt)$", // MOD
+        r"(?:^|_| |)(?P<mod>[sS][uU][pP][eE][rR]|[aA][lL][tT]|[cC][tT][rR][lL]|[sS][hH][iI][fF][tT])(?:_| |$|)", // MOD
         r"^(?P<pre>.*?) *(?P<deg>\d*) *deg$", // gradient
         r"^\$(?P<name>.*)$", // Variable
         r".*?" // Str
       ]).expect("Error creating regex set");
+      static ref TOKEN_LEN: usize = TOKEN_SET.len() - 1;
       static ref TOKEN_REGEXES: Vec<Regex> = TOKEN_SET
         .patterns()
         .iter()
@@ -245,53 +230,94 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
         } else {
             panic!("Nothing was matched")
         };
-
-        let parsed = if matches.len() >= 2 {
+        let is_mod = {
+            let s = |st: &str| token.to_lowercase().starts_with(st);
+            s("super") || s("shift") || s("alt") || s("ctrl")
+        };
+        let parsed = if matches[0] == 10 && is_mod {
+            let mut buf = vec![];
+            let matches_iter = TOKEN_REGEXES[10].captures_iter(token);
+            for i in matches_iter {
+                buf.push(match i["mod"].to_lowercase().as_str() {
+                    "super" => Mod::SUPER,
+                    "shift" => Mod::SHIFT,
+                    "ctrl" => Mod::CTRL,
+                    "alt" => Mod::ALT,
+                    _ => unreachable!(),
+                })
+            }
+            Token::Mod(buf)
+        } else if matches.len() >= 2 {
             match matches[0] {
-                0 => Token::Color(parse_color(&captures, 0)), // Rgb
-                1 => Token::Color(parse_color(&captures, 1)), // Rgba
-                2 => Token::Color(parse_color(&captures, 2)), // Rgba Hex
-                3 => Token::Color(parse_color(&captures, 3)), // Argb
-                4 => Token::Bool(match token {
+                0 => Token::Empty,
+                1 => Token::Color(parse_color(&captures, 1)), // Rgb
+                2 => Token::Color(parse_color(&captures, 2)), // Rgb
+                3 => Token::Color(parse_color(&captures, 3)), // Rgba
+                4 => Token::Color(parse_color(&captures, 4)), // Rgba Hex
+                5 => Token::Color(parse_color(&captures, 5)), // Argb
+                6 => Token::Bool(match token {
                     "true" | "yes" | "1" => true,
                     "false" | "no" | "0" => false,
                     _ => unreachable!(),
                 }),
-                5 => Token::Float(token.parse::<f64>().unwrap()),
-                6 => Token::Vec2(
+                7 => Token::Float(token.parse::<f64>().unwrap()),
+                8 => Token::Vec2(
                     captures["v1"].parse::<f64>().unwrap(),
                     captures["v2"].parse::<f64>().unwrap(),
                 ),
-                7 => Token::Int(token.parse::<i64>().unwrap()),
-                8 => {
+                9 => Token::Int(token.parse::<i64>().unwrap()),
+                10 => {
                     use Mod::*;
-                    Token::Mod(match token.to_lowercase().as_str() {
+                    Token::Mod(vec![match token.to_lowercase().as_str() {
                         "super" => SUPER,
                         "alt" => ALT,
                         "ctrl" => CTRL,
+                        "shift" => SHIFT,
                         _ => unreachable!(),
-                    })
+                    }])
                 }
-                9 => {
+                11 => {
                     let colors = {
                         let mut colors: Vec<Color> = vec![];
-                        let mut rgbs: Vec<_> = captures["pre"]
-                            .split(") ")
-                            .map(|v| v.trim())
-                            .map(|v| v.to_string() + ")")
-                            .collect();
+                        let mut rgbs: Vec<_> = {
+                            lazy_static! {
+                                static ref REGEX: Regex =
+                                    Regex::new(r"(?P<pre>rgba?\(.*?\)|0x[[:xdigit:]]{8})")
+                                        .expect("error creating regex");
+                            }
+                            let pre = captures["pre"].to_string();
+                            let mut buf = vec![];
+                            for i in REGEX.captures_iter(&pre) {
+                                buf.push(i["pre"].to_string())
+                            }
+                            buf
+                        };
                         rgbs.pop();
                         for i in rgbs {
-                            if i.starts_with("rgba(") {
-                                colors
-                                    .push(parse_color(&TOKEN_REGEXES[1].captures(&i).unwrap(), 1));
+                            if i.starts_with("rgba(") && i.contains(",") {
+                                colors.push(parse_color(
+                                    &TOKEN_REGEXES[3].captures(&i).expect("invalid color"),
+                                    3,
+                                ));
+                            } else if i.starts_with("rgba(") && !i.contains(",") {
+                                colors.push(parse_color(
+                                    &TOKEN_REGEXES[4].captures(&i).expect("invalid color"),
+                                    4,
+                                ));
                             } else if i.starts_with("0x") {
-                                colors
-                                    .push(parse_color(&TOKEN_REGEXES[2].captures(&i).unwrap(), 2));
+                                colors.push(parse_color(
+                                    &TOKEN_REGEXES[5].captures(&i).expect("invalid color"),
+                                    5,
+                                ));
+                            } else if i.starts_with("rgba(") && !i.contains(",") {
+                                colors.push(parse_color(
+                                    &TOKEN_REGEXES[2].captures(&i).expect("invalid color"),
+                                    2,
+                                ));
                             } else {
                                 colors.push(parse_color(
-                                    &TOKEN_REGEXES[0].captures(&i).expect("invalid color"),
-                                    0,
+                                    &TOKEN_REGEXES[1].captures(&i).expect("invalid color"),
+                                    1,
                                 ));
                             }
                         }
@@ -299,11 +325,11 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
                     };
                     Token::Gradient(colors, captures["deg"].parse::<u16>().unwrap())
                 }
-                10 => Token::Variable(captures["name"].to_string()),
-                11 => Token::Str(token.trim().to_string()),
-                _ => todo!(),
+                12 => Token::Variable(captures["name"].to_string()),
+                13 => Token::Str(token.trim().to_string()),
+                _ => unreachable!(),
             }
-        } else if matches.len() == 1 && matches[0] == 11 {
+        } else if matches.len() == 1 && matches[0] == *TOKEN_LEN {
             Token::Str(token.trim().to_string())
         } else {
             panic!("no matches {matches:#?}")
@@ -341,7 +367,12 @@ pub fn whole_parser(cfg: &str) -> AstRoot {
             };
             if depth.len() == 0 && !pre.contains(":") {
                 let (name, tokens) = line_parse(line);
-                ast.keywords.insert(name, tokens);
+                ast.keywords.entry(name.clone()).or_insert(vec![]);
+                match &mut ast.keywords.get_mut(&name) {
+                    Some(v) => v.push(tokens),
+                    None => unreachable!(),
+                };
+                //ast.keywords.insert(name, tokens);
                 continue;
             }
             let name = if depth.len() != 0 {
