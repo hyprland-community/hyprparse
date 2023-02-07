@@ -1,7 +1,12 @@
 [package]
 name = "hyprparse"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 edition = "2021"
+readme = "README.md"
+description = "A parser for hypr config files"
+homepage = "https://github.com/hyprland-community/hyprparse"
+repository = "https://github.com/hyprland-community/hyprparse"
+
 metadata.nix.build = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
