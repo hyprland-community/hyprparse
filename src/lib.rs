@@ -46,6 +46,41 @@ pub enum Token {
     Str(String),
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Arg {
+    Named(String, Token),
+    Unnamed(Token),
+}
+
+impl std::fmt::Display for Arg {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Arg::Named(n, t) => format!("{n}: {t}"),
+                Arg::Unnamed(t) => t.to_string(),
+            }
+        )
+    }
+}
+
+impl Arg {
+    pub fn into_token(self) -> Token {
+        match self {
+            Arg::Named(_, t) => t,
+            Arg::Unnamed(t) => t,
+        }
+    }
+    pub fn into_token_mut(&mut self) -> &mut Token {
+        match self {
+            Arg::Named(_, t) => t,
+            Arg::Unnamed(t) => t,
+        }
+    }
+}
+
 impl std::fmt::Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         use Token::*;
@@ -72,8 +107,8 @@ pub type AstObj = Token;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AstRoot {
-    config: BTreeMap<String, Vec<Token>>,
-    keywords: BTreeMap<String, Vec<Vec<Token>>>,
+    config: BTreeMap<String, Vec<Arg>>,
+    keywords: BTreeMap<String, Vec<Vec<Arg>>>,
 }
 
 fn join<T: ToString, Str: ToString>(vec: Vec<T>, sep: Str) -> String {
@@ -186,7 +221,7 @@ fn split_args(s: String) -> Vec<String> {
     buf
 }
 
-pub fn line_parse(line: &str) -> (String, Vec<Token>) {
+pub fn line_parse(line: &str) -> (String, Vec<Arg>) {
     use regex::RegexSet;
     lazy_static! {
       static ref TOKEN_SET: RegexSet = RegexSet::new([
@@ -203,7 +238,7 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
         r"(?:^|_| |)(?P<mod>[sS][uU][pP][eE][rR]|[aA][lL][tT]|[cC][tT][rR][lL]|[sS][hH][iI][fF][tT])(?:_| |$|)", // MOD
         r"^(?P<pre>.*?) *(?P<deg>\d*) *deg$", // gradient
         r"^\$(?P<name>.*)$", // Variable
-        r".*?" // Str
+        r#"^"?(?P<content>.*?)"?$"# // Str
       ]).expect("Error creating regex set");
       static ref TOKEN_LEN: usize = TOKEN_SET.len() - 1;
       static ref TOKEN_REGEXES: Vec<Regex> = TOKEN_SET
@@ -211,19 +246,29 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
         .iter()
         .map(|pat| Regex::new(pat).expect("error creating regex"))
         .collect();
+      static ref NAMED_REGEX: Regex = Regex::new(r"^(?:(?P<name>.*?):(?P<after>.*?)|(?P<lone>.*?))$").unwrap();
     }
 
     let (pre, tokens) = {
         let stuff: Vec<_> = line.split('=').map(|l| l.trim()).collect();
         (stuff[0], stuff[1])
     };
-    let mut all_tokens: Vec<Token> = vec![];
+    let mut all_tokens: Vec<Arg> = vec![];
     for token in split_args(tokens.to_string()).iter() {
-        let token = token.as_str();
-        let matches: Vec<_> = TOKEN_SET.matches(token).iter().collect();
+        let (name, token) = {
+            let token = token.as_str();
+            let captures = NAMED_REGEX.captures(token).unwrap();
+            if let Some(name) = captures.name("name") {
+                (Some(name.as_str()), captures["after"].to_string())
+            } else {
+                (None, captures["lone"].to_string())
+            }
+        };
+
+        let matches: Vec<_> = TOKEN_SET.matches(&token).iter().collect();
 
         let captures = if !TOKEN_REGEXES.is_empty() && !matches.is_empty() {
-            match TOKEN_REGEXES[matches[0]].captures(token) {
+            match TOKEN_REGEXES[matches[0]].captures(&token) {
                 Some(captures) => captures,
                 None => panic!("Regex has no captures"),
             }
@@ -236,7 +281,7 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
         };
         let parsed = if matches[0] == 10 && is_mod {
             let mut buf = vec![];
-            let matches_iter = TOKEN_REGEXES[10].captures_iter(token);
+            let matches_iter = TOKEN_REGEXES[10].captures_iter(&token);
             for i in matches_iter {
                 buf.push(match i["mod"].to_lowercase().as_str() {
                     "super" => Mod::SUPER,
@@ -255,7 +300,7 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
                 3 => Token::Color(parse_color(&captures, 3)), // Rgba
                 4 => Token::Color(parse_color(&captures, 4)), // Rgba Hex
                 5 => Token::Color(parse_color(&captures, 5)), // Argb
-                6 => Token::Bool(match token {
+                6 => Token::Bool(match token.as_str() {
                     "true" | "yes" | "1" => true,
                     "false" | "no" | "0" => false,
                     _ => unreachable!(),
@@ -325,15 +370,20 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
                     Token::Gradient(colors, captures["deg"].parse::<u16>().unwrap())
                 }
                 12 => Token::Variable(captures["name"].to_string()),
-                13 => Token::Str(token.trim().to_string()),
+                13 => Token::Str(captures["content"].to_string()),
                 _ => unreachable!(),
             }
         } else if matches.len() == 1 && matches[0] == *TOKEN_LEN {
-            Token::Str(token.trim().to_string())
+            Token::Str(
+                TOKEN_REGEXES[*TOKEN_LEN].captures(token.trim()).unwrap()["content"].to_string(),
+            )
         } else {
             panic!("no matches {matches:#?}")
         };
-        all_tokens.push(parsed);
+        match name {
+            Some(name) => all_tokens.push(Arg::Named(name.to_string(), parsed)),
+            None => all_tokens.push(Arg::Unnamed(parsed)),
+        };
     }
     (pre.to_string(), all_tokens)
 }
@@ -358,7 +408,7 @@ pub fn whole_parser(cfg: &str) -> AstRoot {
         } else if line.trim().starts_with('$') {
             let line = line.replace('$', "");
             let (name, tokens) = line_parse(&line);
-            vars.insert(name, tokens[0].clone());
+            vars.insert(name, tokens[0].clone().into_token());
         } else {
             let (pre, _) = {
                 let stuff: Vec<_> = line.split('=').map(|l| l.trim()).collect();
@@ -381,9 +431,23 @@ pub fn whole_parser(cfg: &str) -> AstRoot {
             };
             let mut parsed = line_parse(&line).1;
             for item in parsed.iter_mut() {
-                if let Token::Variable(name) = item {
-                    *item = vars.get(name).expect("Unknown variable passed in").clone();
+                match item {
+                    Arg::Named(n, Token::Variable(name)) => {
+                        *item = Arg::Named(
+                            n.to_string(),
+                            vars.get(name).expect("Unknown variable passed in").clone(),
+                        );
+                    }
+                    Arg::Unnamed(Token::Variable(name)) => {
+                        *item = Arg::Unnamed(
+                            vars.get(name).expect("Unknown variable passed in").clone(),
+                        );
+                    }
+                    _ => {}
                 }
+                //if let Token::Variable(name) = item {
+                //    *item = vars.get(name).expect("Unknown variable passed in").clone();
+                //}
             }
             ast.config.insert(name, parsed);
         };
