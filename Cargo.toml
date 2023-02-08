@@ -2,12 +2,18 @@
 name = "hyprparse"
 version = "0.1.0-alpha.2"
 edition = "2021"
+authors = ["yavko <yavornkolev@gmail.com>"]
 readme = "README.md"
 description = "A parser for hypr config files"
 homepage = "https://github.com/hyprland-community/hyprparse"
 repository = "https://github.com/hyprland-community/hyprparse"
-
+license = "AGPL-3.0-or-later"
 metadata.nix.build = true
+
+[profile.release]
+opt-level = "z"
+strip = true
+lto = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

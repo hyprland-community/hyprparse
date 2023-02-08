@@ -279,7 +279,7 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
                 11 => {
                     let colors = {
                         let mut colors: Vec<Color> = vec![];
-                        let mut rgbs: Vec<_> = {
+                        let rgbs = {
                             lazy_static! {
                                 static ref REGEX: Regex =
                                     Regex::new(r"(?P<pre>rgba?\(.*?\)|0x[[:xdigit:]]{8})")
@@ -292,7 +292,6 @@ pub fn line_parse(line: &str) -> (String, Vec<Token>) {
                             }
                             buf
                         };
-                        rgbs.pop();
                         for i in rgbs {
                             if i.starts_with("rgba(") && i.contains(",") {
                                 colors.push(parse_color(
