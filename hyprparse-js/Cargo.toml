@@ -1,6 +1,6 @@
 [package]
 name = "hyprparse-js"
-version = "0.1.0-alpha.2"
+version = "0.1.0-alpha.3"
 edition = "2021"
 authors = ["yavko <yavornkolev@gmail.com>"]
 readme = "README.md"
