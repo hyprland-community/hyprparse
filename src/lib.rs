@@ -209,16 +209,41 @@ fn parse_color(cs: &Captures, num: u8) -> Color {
 }
 // [rgb][(3,4,3)] [,hello,bye]
 fn split_args(s: String) -> Vec<String> {
-    lazy_static! {
-        static ref REGEX: Regex =
-            Regex::new(r#"(?P<token>.+deg|rgba?\(.*?\)|".*?"|[^,]*)(?:,?|$)"#)
-                .expect("error creating regex");
+    fn previous_rgb(index: usize, chars: Vec<char>) -> bool {
+        let string: String = chars[index - 3..index].iter().collect();
+        let string = string.as_str();
+        if string == "gba" || string == "rgb" {
+            true
+        } else {
+            false
+        }
     }
-    let mut buf = vec![];
-    for i in REGEX.captures_iter(&s) {
-        buf.push(i["token"].to_string())
+
+    fn splitter<Str: ToString>(s: Str) -> Vec<String> {
+        let mut is_in_rgb = false;
+        let mut is_in_str = false;
+        let mut last = 0;
+        let chars: Vec<_> = s.to_string().chars().collect();
+        let mut final_str = vec![];
+        for (index, c) in chars.iter().enumerate() {
+            if *c == '(' && previous_rgb(index, chars.clone()) && !is_in_str {
+                is_in_rgb = true;
+            } else if *c == ')' && is_in_rgb && !is_in_str {
+                is_in_rgb = false;
+            } else if *c == '"' && is_in_str {
+                is_in_str = false;
+            } else if *c == '"' && !is_in_str {
+                is_in_str = true;
+            } else if *c == ',' && !is_in_str && !is_in_rgb {
+                final_str.push(chars[last..index].iter().collect());
+                last = index + 1
+            };
+            //println!("{c}: rgb:{is_in_rgb} str:{is_in_str}");
+        }
+        final_str.push(chars[last..].iter().collect());
+        final_str
     }
-    buf
+    splitter(s)
 }
 
 pub fn line_parse(line: &str) -> (String, Vec<Arg>) {
@@ -246,7 +271,7 @@ pub fn line_parse(line: &str) -> (String, Vec<Arg>) {
         .iter()
         .map(|pat| Regex::new(pat).expect("error creating regex"))
         .collect();
-      static ref NAMED_REGEX: Regex = Regex::new(r"^(?:(?P<name>.*?):(?P<after>.*?)|(?P<lone>.*?))$").unwrap();
+      static ref NAMED_REGEX: Regex = Regex::new(r"^(?:(?P<name>.*?): *(?P<after>.*?)|(?P<lone>.*?))$").unwrap();
     }
 
     let (pre, tokens) = {

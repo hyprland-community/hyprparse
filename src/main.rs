@@ -5,7 +5,7 @@ fn main() {
     $test = -69
     general:test4 = $test,$test,$test
     general:test = rgb(69,69,69)
-    general:test5 = rgba(FFFFFFFF),rgb(000000),"hello!",test: "hello"
+    general:test5 = rgba(FFFFFFFF),rgb(000000),"hello!",test: "hello",test2: rgb(4,4,3)
     # hello
     general {
       test2 = rgba(7,8,9,100)
