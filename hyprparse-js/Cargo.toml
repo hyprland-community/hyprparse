@@ -1,11 +1,11 @@
 [package]
 name = "hyprparse-js"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 edition = "2021"
 authors = ["yavko <yavornkolev@gmail.com>"]
 readme = "README.md"
 description = "A parser for hypr config files, js wasm bindings"
-homepage = "https://github.com/hyprland-community/hyprparse"
+homepage = "https://github.com/hyprland-community/hyprparse/tree/main/hyprparse-js"
 repository = "https://github.com/hyprland-community/hyprparse"
 license = "AGPL-3.0-or-later"
 metadata.nix.build = true

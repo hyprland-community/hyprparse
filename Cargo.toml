@@ -1,6 +1,6 @@
 [package]
 name = "hyprparse"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 edition = "2021"
 authors = ["yavko <yavornkolev@gmail.com>"]
 readme = "README.md"
